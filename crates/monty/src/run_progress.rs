@@ -261,7 +261,7 @@ impl<T: ResourceTracker> OsCall<T> {
         result: impl Into<ExtFunctionResult>,
         print: PrintWriter<'_>,
     ) -> Result<RunProgress<T>, MontyException> {
-        self.snapshot.run(result, print)
+        self.snapshot.run(result.into(), print)
     }
 }
 

@@ -438,6 +438,46 @@ pub enum StaticStrings {
     #[strum(serialize = "nan")]
     MathNan,
 
+    // ==========================
+    // datetime module strings
+    Datetime,
+    Date,
+    Timedelta,
+    Timezone,
+    Today,
+    Now,
+    Utc,
+    TotalSeconds,
+    Tzinfo,
+    // date/datetime field attributes
+    Year,
+    Month,
+    Day,
+    Hour,
+    Minute,
+    Second,
+    Microsecond,
+    // timedelta constructor/attribute names
+    Days,
+    Seconds,
+    Microseconds,
+    Milliseconds,
+    Minutes,
+    Hours,
+    Weeks,
+    // timezone constructor kwargs
+    Offset,
+    // datetime.now() kwarg
+    Tz,
+    // date/datetime methods
+    Isoformat,
+    Strftime,
+    Weekday,
+    Isoweekday,
+    Timestamp,
+    Strptime,
+    Fromisoformat,
+
     // re module strings
     /// Module name for `import re`.
     Re,

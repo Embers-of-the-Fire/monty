@@ -487,7 +487,7 @@ impl<T: ResourceTracker> ReplOsCall<T> {
         result: impl Into<ExtFunctionResult>,
         print: PrintWriter<'_>,
     ) -> Result<ReplProgress<T>, Box<ReplStartError<T>>> {
-        self.snapshot.run(result, print)
+        self.snapshot.run(result.into(), print)
     }
 }
 
