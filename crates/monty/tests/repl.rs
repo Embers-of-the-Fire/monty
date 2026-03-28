@@ -180,6 +180,26 @@ fn repl_start_external_call_resumes_to_updated_repl() {
 }
 
 #[test]
+fn repl_feed_start_discards_hidden_comprehension_slots_before_next_turn() {
+    let (repl, _) = init_repl("");
+
+    let progress = repl
+        .feed_start(
+            "items = [i for i in [1]]\nitems = [i for i in [2]]\n",
+            vec![],
+            PrintWriter::Stdout,
+        )
+        .unwrap();
+    let (repl, value) = progress.into_complete().expect("expected completion");
+    assert_eq!(value, MontyObject::None);
+
+    let progress = repl.feed_start("foo()", vec![], PrintWriter::Stdout).unwrap();
+    let call = progress.into_function_call().expect("expected function call");
+    assert_eq!(call.function_name, "foo");
+    assert!(call.args.is_empty());
+}
+
+#[test]
 fn repl_progress_dump_load_roundtrip() {
     let (repl, _) = init_repl("");
 

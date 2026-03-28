@@ -1,3 +1,4 @@
+import dataclasses
 from typing import Callable, Literal
 
 import pytest
@@ -522,6 +523,52 @@ def test_feed_start_multiple_external_calls():
     progress = progress.resume(return_value=20)
     assert isinstance(progress, pydantic_monty.MontyComplete)
     assert progress.output == snapshot(30)
+
+
+def test_feed_start_regression_281_comprehension_dataclass_repl_state():
+    @dataclasses.dataclass
+    class Item:
+        text: str
+
+    @dataclasses.dataclass
+    class Container:
+        style: str = 'Normal'
+        items: list = dataclasses.field(default_factory=list)
+
+    def drive(state):
+        while not isinstance(state, pydantic_monty.MontyComplete):
+            if isinstance(state, pydantic_monty.NameLookupSnapshot):
+                state = state.resume()
+            elif isinstance(state, pydantic_monty.FunctionSnapshot):
+                fn = state.function_name
+                if fn == 'get_data':
+                    data = [
+                        Container(style='A', items=[Item(text='hello'), Item(text='world')]),
+                        Container(style='B', items=[Item(text='foo')]),
+                    ]
+                    state = state.resume(return_value=data)
+                elif fn == 'Container':
+                    state = state.resume(return_value=Container(**state.kwargs))
+                else:
+                    state = state.resume(return_value=None)
+            else:
+                raise AssertionError(f'unexpected progress state: {state!r}')
+        return state
+
+    repl = pydantic_monty.MontyRepl()
+    repl.register_dataclass(Item)
+    repl.register_dataclass(Container)
+
+    turn1 = repl.feed_start(
+        'data = get_data()\nitems = [i.text for i in data[0].items]\nitems = [i.text for i in data[1].items]\n'
+    )
+    turn1 = drive(turn1)
+    assert turn1.output == snapshot(None)
+
+    turn2 = repl.feed_start('c = Container(style="X")\n')
+    turn2 = drive(turn2)
+    assert turn2.output == snapshot(None)
+    assert repl.feed_run('c.style') == snapshot('X')
 
 
 def test_feed_start_error_preserves_repl_state():
