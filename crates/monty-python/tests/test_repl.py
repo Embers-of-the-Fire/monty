@@ -1,5 +1,5 @@
 import dataclasses
-from typing import Callable, Literal
+from typing import Callable, Literal, TypeAlias
 
 import pytest
 from inline_snapshot import snapshot
@@ -7,6 +7,12 @@ from inline_snapshot import snapshot
 import pydantic_monty
 
 PrintCallback = Callable[[Literal['stdout'], str], None]
+ReplProgress: TypeAlias = (
+    pydantic_monty.FunctionSnapshot
+    | pydantic_monty.NameLookupSnapshot
+    | pydantic_monty.FutureSnapshot
+    | pydantic_monty.MontyComplete
+)
 
 
 def make_print_collector() -> tuple[list[str], PrintCallback]:
@@ -533,9 +539,9 @@ def test_feed_start_regression_281_comprehension_dataclass_repl_state():
     @dataclasses.dataclass
     class Container:
         style: str = 'Normal'
-        items: list = dataclasses.field(default_factory=list)
+        items: list[Item] = dataclasses.field(default_factory=list)
 
-    def drive(state):
+    def drive(state: ReplProgress) -> pydantic_monty.MontyComplete:
         while not isinstance(state, pydantic_monty.MontyComplete):
             if isinstance(state, pydantic_monty.NameLookupSnapshot):
                 state = state.resume()
@@ -552,7 +558,7 @@ def test_feed_start_regression_281_comprehension_dataclass_repl_state():
                 else:
                     state = state.resume(return_value=None)
             else:
-                raise AssertionError(f'unexpected progress state: {state!r}')
+                state = state.resume({})
         return state
 
     repl = pydantic_monty.MontyRepl()

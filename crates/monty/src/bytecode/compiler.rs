@@ -2379,6 +2379,7 @@ impl<'a> Compiler<'a> {
     ///
     /// Bytecode structure:
     /// ```text
+    /// SAVE_*_AND_CLEAR ... ; one per synthetic comprehension slot
     /// BUILD_LIST 0          ; empty result
     /// <compile first iter>
     /// GET_ITER
@@ -2391,9 +2392,11 @@ impl<'a> Compiler<'a> {
     ///   LIST_APPEND depth
     ///   JUMP loop_start
     /// end_loop:
+    /// RESTORE_* ...        ; reverse order
     /// ; result list on stack
     /// ```
     fn compile_list_comp(&mut self, elt: &ExprLoc, generators: &[Comprehension]) -> Result<(), CompileError> {
+        self.compile_comprehension_slot_saves(generators);
         // Build empty list
         self.code.emit_u16(Opcode::BuildList, 0);
 
@@ -2405,11 +2408,14 @@ impl<'a> Compiler<'a> {
             Ok(())
         })?;
 
+        self.compile_comprehension_slot_restores(generators);
+
         Ok(())
     }
 
     /// Compiles a set comprehension: `{elt for target in iter if cond...}`
     fn compile_set_comp(&mut self, elt: &ExprLoc, generators: &[Comprehension]) -> Result<(), CompileError> {
+        self.compile_comprehension_slot_saves(generators);
         // Build empty set
         self.code.emit_u16(Opcode::BuildSet, 0);
 
@@ -2421,6 +2427,8 @@ impl<'a> Compiler<'a> {
             Ok(())
         })?;
 
+        self.compile_comprehension_slot_restores(generators);
+
         Ok(())
     }
 
@@ -2431,6 +2439,7 @@ impl<'a> Compiler<'a> {
         value: &ExprLoc,
         generators: &[Comprehension],
     ) -> Result<(), CompileError> {
+        self.compile_comprehension_slot_saves(generators);
         // Build empty dict
         self.code.emit_u16(Opcode::BuildDict, 0);
 
@@ -2443,7 +2452,68 @@ impl<'a> Compiler<'a> {
             Ok(())
         })?;
 
+        self.compile_comprehension_slot_restores(generators);
+
         Ok(())
+    }
+
+    /// Emits save-and-clear opcodes for every synthetic comprehension target slot.
+    ///
+    /// Monty already inlines comprehensions, but their loop variables live in compiler-
+    /// generated slots. Saving and clearing those slots before execution makes their lifetime
+    /// match PEP 709 more closely and prevents stale values from leaking past the end of the
+    /// comprehension when execution completes incrementally.
+    fn compile_comprehension_slot_saves(&mut self, generators: &[Comprehension]) {
+        for slot in Self::comprehension_target_slots(generators) {
+            let opcode = if self.is_module_scope {
+                Opcode::SaveGlobalAndClear
+            } else {
+                Opcode::SaveLocalAndClear
+            };
+            self.code.emit_u16(opcode, slot);
+        }
+    }
+
+    /// Emits restore opcodes for every synthetic comprehension target slot.
+    ///
+    /// Restores are emitted in reverse order so the VM's save stack is unwound LIFO.
+    fn compile_comprehension_slot_restores(&mut self, generators: &[Comprehension]) {
+        for slot in Self::comprehension_target_slots(generators).into_iter().rev() {
+            let opcode = if self.is_module_scope {
+                Opcode::RestoreGlobal
+            } else {
+                Opcode::RestoreLocal
+            };
+            self.code.emit_u16(opcode, slot);
+        }
+    }
+
+    /// Collects every namespace slot assigned by the comprehension generators.
+    ///
+    /// Each target slot is compiler-generated and scoped to the comprehension, so saving all
+    /// of them is sufficient to restore the namespace even for nested generators and tuple
+    /// unpacking targets.
+    fn comprehension_target_slots(generators: &[Comprehension]) -> Vec<u16> {
+        let mut slots = Vec::new();
+        for generator in generators {
+            Self::collect_unpack_target_slots(&generator.target, &mut slots);
+        }
+        slots
+    }
+
+    /// Recursively collects namespace slots written by an unpack target.
+    fn collect_unpack_target_slots(target: &UnpackTarget, slots: &mut Vec<u16>) {
+        match target {
+            UnpackTarget::Name(ident) | UnpackTarget::Starred(ident) => {
+                let slot = u16::try_from(ident.namespace_id().index()).expect("local slot exceeds u16");
+                slots.push(slot);
+            }
+            UnpackTarget::Tuple { targets, .. } => {
+                for target in targets {
+                    Self::collect_unpack_target_slots(target, slots);
+                }
+            }
+        }
     }
 
     /// Recursively compiles comprehension generators (the for/if clauses).

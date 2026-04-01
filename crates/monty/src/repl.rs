@@ -228,7 +228,6 @@ impl<T: ResourceTracker> MontyRepl<T> {
         } = executor;
         self.global_name_map = name_map;
         self.interns = interns;
-        self.discard_hidden_global_slots();
 
         result.map_err(|e| e.into_python_exception(&self.interns, &code))
     }
@@ -240,29 +239,6 @@ impl<T: ResourceTracker> MontyRepl<T> {
     fn ensure_globals_size(&mut self, size: usize) {
         if self.globals.len() < size {
             self.globals.resize_with(size, || Value::Undefined);
-        }
-    }
-
-    /// Drops anonymous trailing global slots that are not reachable from `global_name_map`.
-    ///
-    /// REPL snippets can allocate temporary module-level slots for comprehension loop
-    /// variables. Those slots are intentionally omitted from `global_name_map`, so the next
-    /// snippet is allowed to reuse the same slot index for a new visible name. If the old
-    /// temporary value is still sitting in `self.globals`, callable loads can observe that
-    /// stale object instead of `Value::Undefined` and incorrectly raise `TypeError`.
-    ///
-    /// Truncating the globals vector back to the visible namespace keeps cross-turn state
-    /// aligned with the persisted name map.
-    fn discard_hidden_global_slots(&mut self) {
-        let visible_globals = self
-            .global_name_map
-            .values()
-            .map(|id| id.index())
-            .max()
-            .map_or(0, |max_index| max_index + 1);
-
-        if self.globals.len() > visible_globals {
-            self.globals.drain(visible_globals..).drop_with_heap(&mut self.heap);
         }
     }
 
@@ -973,7 +949,6 @@ fn build_repl_progress<T: ResourceTracker>(
             let Executor { name_map, interns, .. } = executor;
             repl.global_name_map = name_map;
             repl.interns = interns;
-            repl.discard_hidden_global_slots();
             Ok(ReplProgress::Complete { repl, value: obj })
         }
         ConvertedExit::FunctionCall {
@@ -1026,7 +1001,6 @@ fn build_repl_progress<T: ResourceTracker>(
             let Executor { name_map, interns, .. } = executor;
             repl.global_name_map = name_map;
             repl.interns = interns;
-            repl.discard_hidden_global_slots();
             Err(Box::new(ReplStartError { repl, error }))
         }
     }

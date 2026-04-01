@@ -178,6 +178,7 @@ impl<T: ResourceTracker> VM<'_, '_, T> {
 
             // No handler in this frame - pop frame and try outer
             if this.frames.len() <= 1 {
+                this.restore_saved_comprehension_slots_for_frame(0);
                 // No more frames - exception is unhandled
                 let is_spawned = this.is_spawned_task();
 
@@ -247,6 +248,7 @@ impl<T: ResourceTracker> VM<'_, '_, T> {
                 }
             }
         }
+        self.restore_saved_comprehension_slots_for_frame(0);
         error
     }
 

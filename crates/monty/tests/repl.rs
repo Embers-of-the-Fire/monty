@@ -180,7 +180,7 @@ fn repl_start_external_call_resumes_to_updated_repl() {
 }
 
 #[test]
-fn repl_feed_start_discards_hidden_comprehension_slots_before_next_turn() {
+fn repl_feed_start_restores_comprehension_slots_before_next_turn() {
     let (repl, _) = init_repl("");
 
     let progress = repl
@@ -197,6 +197,22 @@ fn repl_feed_start_discards_hidden_comprehension_slots_before_next_turn() {
     let call = progress.into_function_call().expect("expected function call");
     assert_eq!(call.function_name, "foo");
     assert!(call.args.is_empty());
+    let _repl = call.into_repl();
+}
+
+#[test]
+fn repl_feed_start_restores_comprehension_slots_after_runtime_error() {
+    let (repl, _) = init_repl("");
+
+    let err = repl
+        .feed_start("items = [1 / i for i in [0]]", vec![], PrintWriter::Stdout)
+        .expect_err("expected runtime error");
+
+    let progress = err.repl.feed_start("foo()", vec![], PrintWriter::Stdout).unwrap();
+    let call = progress.into_function_call().expect("expected function call");
+    assert_eq!(call.function_name, "foo");
+    assert!(call.args.is_empty());
+    let _repl = call.into_repl();
 }
 
 #[test]

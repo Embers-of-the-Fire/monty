@@ -440,6 +440,26 @@ pub enum Opcode {
     /// Pops iterable (TOS), adds each item to set at stack position `len - 2 - depth`.
     /// Raises `TypeError` if iterable is not iterable.
     SetExtend,
+    /// Save a local slot to the VM's comprehension-save stack, then clear it.
+    /// Operand: u16 slot.
+    ///
+    /// Used by inlined comprehensions to give their synthetic loop-variable slots the
+    /// same temporary lifetime as CPython's `LOAD_FAST_AND_CLEAR` behavior, without
+    /// exposing the saved value on the operand stack.
+    SaveLocalAndClear,
+    /// Restore the most recently saved local slot from the comprehension-save stack.
+    /// Operand: u16 slot.
+    RestoreLocal,
+    /// Save a global slot to the VM's comprehension-save stack, then clear it.
+    /// Operand: u16 slot.
+    ///
+    /// Module-scope comprehensions use global slots in Monty's runtime model, so they
+    /// need an explicit save/restore pair to avoid leaking temporary loop values across
+    /// REPL turns and other incremental execution boundaries.
+    SaveGlobalAndClear,
+    /// Restore the most recently saved global slot from the comprehension-save stack.
+    /// Operand: u16 slot.
+    RestoreGlobal,
 }
 
 impl TryFrom<u8> for Opcode {
@@ -477,7 +497,7 @@ impl Opcode {
             LoadLocal | LoadLocalW | LoadLocalCallable | LoadLocalCallableW | LoadGlobal | LoadGlobalCallable
             | LoadCell => 1,
             StoreLocal | StoreLocalW | StoreGlobal | StoreCell => -1,
-            DeleteLocal | DeleteGlobal => 0, // doesn't affect stack
+            DeleteLocal | DeleteGlobal | SaveLocalAndClear | RestoreLocal | SaveGlobalAndClear | RestoreGlobal => 0,
 
             // Binary operations: pop 2, push 1 = -1
             BinaryAdd | BinarySub | BinaryMul | BinaryDiv | BinaryFloorDiv | BinaryMod | BinaryPow | BinaryAnd
@@ -584,8 +604,8 @@ mod tests {
 
     #[test]
     fn test_opcode_roundtrip() {
-        // Verify that all opcodes from 0 to DeleteGlobal (last opcode) can be converted to u8 and back.
-        for byte in 0..=Opcode::DeleteGlobal as u8 {
+        // Verify that all opcodes from 0 to RestoreGlobal (last opcode) can be converted to u8 and back.
+        for byte in 0..=Opcode::RestoreGlobal as u8 {
             let opcode = Opcode::try_from(byte).unwrap();
             assert_eq!(opcode as u8, byte, "opcode {opcode:?} has wrong discriminant");
         }
@@ -601,12 +621,16 @@ mod tests {
         assert_eq!(Opcode::DeleteGlobal as u8, 112);
         assert_eq!(Opcode::DictUpdate as u8, 113);
         assert_eq!(Opcode::SetExtend as u8, 114);
+        assert_eq!(Opcode::SaveLocalAndClear as u8, 115);
+        assert_eq!(Opcode::RestoreLocal as u8, 116);
+        assert_eq!(Opcode::SaveGlobalAndClear as u8, 117);
+        assert_eq!(Opcode::RestoreGlobal as u8, 118);
     }
 
     #[test]
     fn test_invalid_opcode() {
         // Byte just after the last valid opcode should fail
-        let result = Opcode::try_from(Opcode::SetExtend as u8 + 1);
+        let result = Opcode::try_from(Opcode::RestoreGlobal as u8 + 1);
         assert!(result.is_err());
         // 255 should also fail
         let result = Opcode::try_from(255u8);
